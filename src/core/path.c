@@ -110,16 +110,14 @@ int path_spec_watch(PathSpec *s, sd_event_io_handler_t handler) {
                 } else {
                         exists = true;
 
-                        /* Path exists, we don't need to watch parent
-                           too closely. */
+                        /* Path exists, we don't need to watch parent too closely. */
                         if (oldslash) {
                                 char *cut2 = oldslash + (oldslash == s->path);
                                 char tmp2 = *cut2;
                                 *cut2 = '\0';
 
-                                inotify_add_watch(s->inotify_fd, s->path, IN_MOVE_SELF);
-                                /* Error is ignored, the worst can happen is
-                                   we get spurious events. */
+                                (void) inotify_add_watch(s->inotify_fd, s->path, IN_MOVE_SELF);
+                                /* Error is ignored, the worst can happen is we get spurious events. */
 
                                 *cut2 = tmp2;
                         }
@@ -320,7 +318,7 @@ static int path_add_default_dependencies(Path *p) {
         if (r < 0)
                 return r;
 
-        if (UNIT(p)->manager->running_as == MANAGER_SYSTEM) {
+        if (MANAGER_IS_SYSTEM(UNIT(p)->manager)) {
                 r = unit_add_two_dependencies_by_name(UNIT(p), UNIT_AFTER, UNIT_REQUIRES, SPECIAL_SYSINIT_TARGET, NULL, true);
                 if (r < 0)
                         return r;

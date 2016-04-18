@@ -1,9 +1,7 @@
-#pragma once
-
 /***
   This file is part of systemd.
 
-  Copyright 2014 Tom Gundersen <teg@jklm.no>
+  Copyright 2016 Lennart Poettering
 
   systemd is free software; you can redistribute it and/or modify it
   under the terms of the GNU Lesser General Public License as published by
@@ -19,18 +17,17 @@
   along with systemd; If not, see <http://www.gnu.org/licenses/>.
 ***/
 
-typedef struct Bridge Bridge;
+#include <stdlib.h>
+#include <util.h>
 
-#include "networkd-netdev.h"
+#include "tests.h"
 
-struct Bridge {
-        NetDev meta;
+char* setup_fake_runtime_dir(void) {
+        char t[] = "/tmp/fake-xdg-runtime-XXXXXX", *p;
 
-        int mcast_querier;
+        assert_se(mkdtemp(t));
+        assert_se(setenv("XDG_RUNTIME_DIR", t, 1) >= 0);
+        assert_se(p = strdup(t));
 
-        usec_t forward_delay;
-        usec_t hello_time;
-        usec_t max_age;
-};
-
-extern const NetDevVTable bridge_vtable;
+        return p;
+}

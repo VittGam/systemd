@@ -2495,7 +2495,7 @@ int config_parse_syscall_filter(
 
         /* Turn on NNP, but only if it wasn't configured explicitly
          * before, and only if we are in user mode. */
-        if (!c->no_new_privileges_set && u->manager->running_as == MANAGER_USER)
+        if (!c->no_new_privileges_set && MANAGER_IS_USER(u->manager))
                 c->no_new_privileges = true;
 
         return 0;
@@ -2847,11 +2847,12 @@ int config_parse_device_allow(
                 void *data,
                 void *userdata) {
 
-        _cleanup_free_ char *path = NULL;
+        _cleanup_free_ char *path = NULL, *t = NULL;
         CGroupContext *c = data;
         CGroupDeviceAllow *a;
-        const char *m;
+        const char *m = NULL;
         size_t n;
+        int r;
 
         if (isempty(rvalue)) {
                 while (c->device_allow)
@@ -2860,8 +2861,16 @@ int config_parse_device_allow(
                 return 0;
         }
 
-        n = strcspn(rvalue, WHITESPACE);
-        path = strndup(rvalue, n);
+        r = unit_full_printf(userdata, rvalue, &t);
+        if(r < 0) {
+                log_syntax(unit, LOG_WARNING, filename, line, r,
+                           "Failed to resolve specifiers in %s, ignoring: %m",
+                           rvalue);
+        }
+
+        n = strcspn(t, WHITESPACE);
+
+        path = strndup(t, n);
         if (!path)
                 return log_oom();
 
@@ -2872,7 +2881,7 @@ int config_parse_device_allow(
                 return 0;
         }
 
-        m = rvalue + n + strspn(rvalue + n, WHITESPACE);
+        m = t + n + strspn(t + n, WHITESPACE);
         if (isempty(m))
                 m = "rwm";
 
@@ -3574,7 +3583,7 @@ static int load_from_path(Unit *u, const char *path) {
         } else  {
                 char **p;
 
-                STRV_FOREACH(p, u->manager->lookup_paths.unit_path) {
+                STRV_FOREACH(p, u->manager->lookup_paths.search_path) {
 
                         /* Instead of opening the path right away, we manually
                          * follow all symlinks and add their name to our unit
@@ -3620,10 +3629,12 @@ static int load_from_path(Unit *u, const char *path) {
         if (fstat(fileno(f), &st) < 0)
                 return -errno;
 
-        if (null_or_empty(&st))
+        if (null_or_empty(&st)) {
                 u->load_state = UNIT_MASKED;
-        else {
+                u->fragment_mtime = 0;
+        } else {
                 u->load_state = UNIT_LOADED;
+                u->fragment_mtime = timespec_load(&st.st_mtim);
 
                 /* Now, parse the file contents */
                 r = config_parse(u->id, filename, f,
@@ -3637,8 +3648,6 @@ static int load_from_path(Unit *u, const char *path) {
         free(u->fragment_path);
         u->fragment_path = filename;
         filename = NULL;
-
-        u->fragment_mtime = timespec_load(&st.st_mtim);
 
         if (u->source_path) {
                 if (stat(u->source_path, &st) >= 0)

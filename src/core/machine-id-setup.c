@@ -261,10 +261,10 @@ int machine_id_setup(const char *root, sd_id128_t machine_id) {
 
         RUN_WITH_UMASK(0022) {
                 r = write_string_file(run_machine_id, id, WRITE_STRING_FILE_CREATE);
-        }
-        if (r < 0) {
-                (void) unlink(run_machine_id);
-                return log_error_errno(r, "Cannot write %s: %m", run_machine_id);
+                if (r < 0) {
+                        (void) unlink(run_machine_id);
+                        return log_error_errno(r, "Cannot write %s: %m", run_machine_id);
+                }
         }
 
         /* And now, let's mount it over */

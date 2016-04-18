@@ -523,7 +523,7 @@ static int service_add_default_dependencies(Service *s) {
         /* Add a number of automatic dependencies useful for the
          * majority of services. */
 
-        if (UNIT(s)->manager->running_as == MANAGER_SYSTEM) {
+        if (MANAGER_IS_SYSTEM(UNIT(s)->manager)) {
                 /* First, pull in the really early boot stuff, and
                  * require it, so that we fail if we can't acquire
                  * it. */
@@ -832,7 +832,7 @@ static int service_load_pid_file(Service *s, bool may_warn) {
         return 0;
 }
 
-static int service_search_main_pid(Service *s) {
+static void service_search_main_pid(Service *s) {
         pid_t pid = 0;
         int r;
 
@@ -841,30 +841,24 @@ static int service_search_main_pid(Service *s) {
         /* If we know it anyway, don't ever fallback to unreliable
          * heuristics */
         if (s->main_pid_known)
-                return 0;
+                return;
 
         if (!s->guess_main_pid)
-                return 0;
+                return;
 
         assert(s->main_pid <= 0);
 
-        r = unit_search_main_pid(UNIT(s), &pid);
-        if (r < 0)
-                return r;
+        if (unit_search_main_pid(UNIT(s), &pid) < 0)
+                return;
 
         log_unit_debug(UNIT(s), "Main PID guessed: "PID_FMT, pid);
-        r = service_set_main_pid(s, pid);
-        if (r < 0)
-                return r;
+        if (service_set_main_pid(s, pid) < 0)
+                return;
 
         r = unit_watch_pid(UNIT(s), pid);
-        if (r < 0) {
+        if (r < 0)
                 /* FIXME: we need to do something here */
                 log_unit_warning_errno(UNIT(s), r, "Failed to watch PID "PID_FMT" from: %m", pid);
-                return r;
-        }
-
-        return 0;
 }
 
 static void service_set_state(Service *s, ServiceState state) {
@@ -926,7 +920,7 @@ static void service_set_state(Service *s, ServiceState state) {
 
         /* For the inactive states unit_notify() will trim the cgroup,
          * but for exit we have to do that ourselves... */
-        if (state == SERVICE_EXITED && UNIT(s)->manager->n_reloading <= 0)
+        if (state == SERVICE_EXITED && !MANAGER_IS_RELOADING(UNIT(s)->manager))
                 unit_prune_cgroup(UNIT(s));
 
         /* For remain_after_exit services, let's see if we can "release" the
@@ -1217,7 +1211,7 @@ static int service_spawn(
                 if (asprintf(our_env + n_env++, "MAINPID="PID_FMT, s->main_pid) < 0)
                         return -ENOMEM;
 
-        if (UNIT(s)->manager->running_as != MANAGER_SYSTEM)
+        if (!MANAGER_IS_SYSTEM(UNIT(s)->manager))
                 if (asprintf(our_env + n_env++, "MANAGERPID="PID_FMT, getpid()) < 0)
                         return -ENOMEM;
 
@@ -2729,7 +2723,7 @@ static void service_sigchld_event(Unit *u, pid_t pid, int code, int status) {
                                                 break;
                                         }
                                 } else
-                                        (void) service_search_main_pid(s);
+                                        service_search_main_pid(s);
 
                                 service_enter_start_post(s);
                                 break;
@@ -2751,16 +2745,15 @@ static void service_sigchld_event(Unit *u, pid_t pid, int code, int status) {
                                                 break;
                                         }
                                 } else
-                                        (void) service_search_main_pid(s);
+                                        service_search_main_pid(s);
 
                                 service_enter_running(s, SERVICE_SUCCESS);
                                 break;
 
                         case SERVICE_RELOAD:
-                                if (f == SERVICE_SUCCESS) {
-                                        service_load_pid_file(s, true);
-                                        (void) service_search_main_pid(s);
-                                }
+                                if (f == SERVICE_SUCCESS)
+                                        if (service_load_pid_file(s, true) < 0)
+                                                service_search_main_pid(s);
 
                                 s->reload_result = f;
                                 service_enter_running(s, SERVICE_SUCCESS);
